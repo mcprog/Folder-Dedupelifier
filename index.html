@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+    body {
+      background-color: #aaa;
+    }
+    .sidebar.main {
+      background-color: white;
+      width: auto;
+      min-width: 300px;
+      min-height: 450px;
+      box-shadow: 0 0 3px #000;
+    }
+    #intro {
+      width: 400px;
+    }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar main">
+      <h1>Folder Dedupelifier</h1>
+      <span class="secondary">by mcprog: <a href="https://github.com/mcprog" target="_blank">GitHub</a></span>
+      <div id="intro">
+        <p>Welcome to the folder dedupelifier. 
+        This web app finds all folders within a given Google Drive folder structure and removes all duplicates. 
+        It does so off of the following criteria: 
+        </p>
+        <ol>
+          <li>If two folders in the root folder have the same name</li>
+          <li>If two folders have the same number of files</li>
+          <li>The folder with less files is removed</li>
+        </ol>
+      </div>
+      <p id="rootLabel"></p>
+      <input id="folderId" type="text" placeholder="Enter Drive ID">
+      <p><span id="progress">0 folders found</span><span id="dupeFound"></span></p>
+      <p><span id="trashNum"></span> <span id="trashText"></span><span id="failText"></span><span id="failNum"></span></p>
+      <p><span id="completedNum"></span> <span id="threadText"></span> <span id="calledNum"></span></p>
+      <button id="btn" class="action" onclick="start();">Start</button>
+    </div>
+    <script>
+      function start() {
+        disable();
+        document.getElementById("progress").innerText = "";
+        document.getElementById("dupeFound").innerText = "";
+        document.getElementById("trashText").innerText = "";
+        document.getElementById("trashNum").innerText = "";
+        document.getElementById("failText").innerText = "";
+        document.getElementById("failNum").innerText = "";
+        document.getElementById("completedNum").innerText = "";
+        document.getElementById("threadText").innerText = "";
+        document.getElementById("calledNum").innerText = "";
+        document.getElementById("btn").innerText = "Finding folders...";
+        
+        var input = document.getElementById("folderId");
+        
+        google.script.run.withSuccessHandler(displayRoot).getRootName(input.value);
+        google.script.run.withSuccessHandler(confirm).dedupe(input.value);
+        
+      }
+      
+      function displayRoot(name) {
+        var rootLabel = document.getElementById("rootLabel");
+        rootLabel.innerText = "Root Folder: /" + name + "/";
+      }
+      
+      function confirm(folders) {
+        enable();
+        
+        if (folders == null) {
+          alert("Folder id entered is invalid");
+          reset();
+        } else {
+          var btn = document.getElementById("btn");
+          btn.innerText = "Delete Duplicates";
+          btn.onclick = function () { dedupeArray(folders); };
+          progressGotFolders(folders.length);
+        }
+        
+      }
+      
+      function disable() {
+        document.getElementById("btn").disabled = true;
+      }
+      
+      function enable() {
+        document.getElementById("btn").disabled = false;
+      }
+      
+      function progressGotFolders(num) {
+        document.getElementById("progress").innerText = num + " folders found";
+      }
+      
+      function progressGotDupes(num) {
+        var found = document.getElementById("dupeFound");
+        found.innerText = ", " + num + " duplicate folders found";
+      }
+
+      
+      function dedupeArray(folders) {
+        disable();
+        
+        
+        console.log("dedupeArray recieved: " + folders.length + " folders..");
+        console.log(folders);
+        var newArray = [];
+        for (i = 0; i < folders.length; ++i) {
+          if (folders[i] == null) {
+            continue;
+          }
+          var currName = folders[i].name;
+          for (j = 0; j < folders.length; ++j) {
+            if (i == j) {
+              continue;
+            }
+            if (folders[j] == null) {
+              continue;
+            }
+            if (currName == folders[j].name) {
+              console.log("same name");
+              newArray.push(folders[j]);
+              folders[j] = null;
+              console.log("added");
+            }
+          }
+        }
+        console.log("copies: ");
+        console.log(newArray);
+        progressGotDupes(newArray.length);
+        if (newArray.length == 0) {
+          reset();
+        }
+        for (m = 0; m < newArray.length; ++m) {
+          try {
+            google.script.run.withSuccessHandler(trashSuccess).withFailureHandler(trashFailure).trashDupes(newArray[m]);
+          } catch (e) {
+            console.log("caut" + e);
+            trashFailure(e);
+          }
+          updateThreads(0, 1);
+        }
+      }
+      
+      function updateThreads(addComp, addCall) {
+        var called = document.getElementById("calledNum");
+        var completed = document.getElementById("completedNum");
+        var threadText = document.getElementById("threadText");
+        if (threadText == null || threadText.innerText == "") {
+          threadText.innerText = "completed threads out of called:";
+          called.innerText = addCall;
+          completed.innerText = addComp;
+        } else {
+          called.innerText = addCall + parseInt(called.innerText);
+          completed.innerText = addComp + parseInt(completed.innerText);
+          if (parseInt(completed.innerText) >= parseInt(called.innerText)) {
+            reset();
+          }
+        }
+      }
+      
+      function trashFailure(error) {
+        updateThreads(1, 0);
+        var fText = document.getElementById("failText");
+        var fNum = document.getElementById("failNum");
+        if (fNum == null || fNum.innerText == "") {
+          fNum.innerText = 1;
+          fText.innerText = ", failed: ";
+        } else {
+          var oldNum = parseInt(fNum.innerText);
+          fNum.innerText = (oldNum + 1);
+        }
+      }
+      
+      function trashSuccess(numTrashed) {
+        updateThreads(1, 0);
+        var pText = document.getElementById("trashText");
+        var pNum = document.getElementById("trashNum");
+        if (pNum == null || pNum.innerText == "") {
+          pNum.innerText = numTrashed;
+          pText.innerText = "files trashed";
+        } else {
+          var oldNum = parseInt(pNum.innerText);
+          pNum.innerText = (oldNum + numTrashed);
+        }
+      }
+      
+      function reset() {
+        var btn = document.getElementById("btn");
+        btn.innerText = "Start";
+        btn.onclick = function () { start(); };
+        enable();
+      }
+    </script>
+  </body>
+</html>
+
+
